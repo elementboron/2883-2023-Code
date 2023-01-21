@@ -15,8 +15,7 @@ import edu.wpi.first.wpilibj2.command.SwerveControllerCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import frc.robot.Constants.AutoConstants;
-import frc.robot.commands.AutoDrives;
-import frc.robot.commands.DrivetrainAuto;
+import frc.robot.Drives.AutoDrives;
 import frc.robot.commands.DrivetrainTeleOp;
 
 import frc.robot.subsystems.Drivetrain;
@@ -49,7 +48,7 @@ public class RobotContainer {
 	
 
 	public Command getAutonomousCommand() {
-		final Command auto = new AutoDrives(mDrivetrain, 0, 0 ,0.5 );
+		final Command auto = new AutoDrives(mDrivetrain, 0.2, 0 ,0.5 );
 		return auto;
   }
 

@@ -38,10 +38,10 @@ public final class Constants {
   public static final double DRIVETRAIN_WHEELBASE_METERS = 0.6223; // Measure and set wheelbase
 
   // FIXME: Calibrate these values often. Set all values to 0 to do so.
-  public static final double LEFT_FRONT_STEER_OFFSET = -Math.toRadians(180.879); // Measure and set front left steer offset
-  public static final double LEFT_REAR_STEER_OFFSET = -Math.toRadians(226.934); // Measure and set front right steer offset
-  public static final double RIGHT_FRONT_STEER_OFFSET = -Math.toRadians(94.834); // Measure and set back left steer offset
-  public static final double RIGHT_REAR_STEER_OFFSET = -Math.toRadians(177.9); // Measure and set back right steer offset
+  public static final double LEFT_FRONT_STEER_OFFSET = -Math.toRadians(190); // Measure and set front left steer offset
+  public static final double LEFT_REAR_STEER_OFFSET = -Math.toRadians(224); // Measure and set front right steer offset
+  public static final double RIGHT_FRONT_STEER_OFFSET = -Math.toRadians(88.8); // Measure and set back left steer offset
+  public static final double RIGHT_REAR_STEER_OFFSET = -Math.toRadians(34); // Measure and set back right steer offset
 
   public static final class AutoConstants {
     public static final double kMaxSpeedMetersPerSecond = 3;

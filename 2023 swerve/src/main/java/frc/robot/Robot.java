@@ -5,11 +5,18 @@ import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
+import frc.robot.subsystems.Drivetrain;
 import frc.robot.subsystems.LimelightReader;
+import frc.robot.utilityFunc.CrashTracker;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Auto.AutoModeExecutor;
+import frc.robot.Auto.AutoModeSelector;
+import frc.robot.Auto.Modes.AutoModeBase;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.math.trajectory.TrajectoryUtil;
@@ -33,6 +40,9 @@ public class Robot extends TimedRobot {
     String trajectoryJSON = "paths/Testing.wpilib.json";
 Trajectory trajectory = new Trajectory();
 private Command m_autonomousCommand;
+	// auto instances
+	private AutoModeExecutor mAutoModeExecutor;
+	private AutoModeSelector mAutoModeSelector = new AutoModeSelector();
 
 @Override
 public void robotInit() {
@@ -75,9 +85,26 @@ public void robotInit() {
   /** This autonomous runs the autonomous command selected by your {@link RobotContainer} class. */
   @Override
   public void autonomousInit() {
-    m_autonomousCommand = mRobotContainer.getAutonomousCommand();
-    if (m_autonomousCommand != null)
-      m_autonomousCommand.schedule();
+    CrashTracker.logAutoInit();
+
+		try {
+
+			Optional<AutoModeBase> autoMode = mAutoModeSelector.getAutoMode();
+			if (autoMode.isPresent()) {
+				Drivetrain.getInstance().resetOdometry(autoMode.get().getStartingPose());
+			}
+
+			mAutoModeExecutor.start();
+
+			//.LimelightReader.Instance().setPipeline(Constants.VisionConstants.kDefaultPipeline);
+
+			// set champs pride automation
+			//mLEDs.setChampsAutoAnimation();	
+
+		} catch (Throwable t) {
+			CrashTracker.logThrowableCrash(t);
+			throw t;
+		}
 
   }
 
@@ -89,6 +116,7 @@ public void robotInit() {
 
   @Override
   public void teleopInit() {
+    Drivetrain.CurrentBotState = Drivetrain.DefaultTeleopState;
 
   }
 

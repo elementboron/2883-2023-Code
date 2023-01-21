@@ -1,4 +1,4 @@
-package frc.robot.commands;
+package frc.robot.Drives;
 
 import java.util.TimerTask;
 import java.util.Timer;
@@ -13,10 +13,13 @@ import frc.robot.subsystems.LimelightReader;
 
 public class AutoDrives extends CommandBase {
 
+  
   private final Drivetrain mDrivetrain;
   private final double mTranslationXSupplier;
   private final double mTranslationYSupplier;
   private final double mRotationSupplier;
+  
+
 
   public AutoDrives(Drivetrain drivetrainSubsystem, double desiredX,
       double desiredY, double desiredZ) {
@@ -38,12 +41,14 @@ public class AutoDrives extends CommandBase {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-    Rotation2d TempHolderZero = new Rotation2d(0,0);
-    mDrivetrain.drive(ChassisSpeeds.fromFieldRelativeSpeeds(
-        mTranslationXSupplier,
-        mTranslationYSupplier,
-        mRotationSupplier,
-        TempHolderZero));
+    mDrivetrain.drive(GetNonRelativeSpeed(mTranslationXSupplier, mTranslationYSupplier, mRotationSupplier));
+
+  }
+
+  public ChassisSpeeds GetNonRelativeSpeed(double x, double y, double rot)
+  {
+    ChassisSpeeds Ret = new ChassisSpeeds(x,y,rot);
+    return Ret;
   }
 
   // Called once the command ends or is interrupted.
@@ -55,7 +60,6 @@ public class AutoDrives extends CommandBase {
   // Returns true when the command should end.
   @Override
   public boolean isFinished() {
-    new WaitCommand(10);
-    return true;
+    return false;
   }
 }

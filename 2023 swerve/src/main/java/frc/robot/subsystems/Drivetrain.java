@@ -1,16 +1,21 @@
 package frc.robot.subsystems;
 
+import com.ctre.phoenix.sensors.Pigeon2;
 import com.kauailabs.navx.frc.AHRS;
 import com.swervedrivespecialties.swervelib.Mk4iSwerveModuleHelper;
 import com.swervedrivespecialties.swervelib.SdsModuleConfigurations;
 import com.swervedrivespecialties.swervelib.SwerveModule;
 
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
+import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
+import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
+import edu.wpi.first.math.trajectory.TrajectoryConfig;
 import edu.wpi.first.wpilibj.SPI;
 import edu.wpi.first.wpilibj.shuffleboard.BuiltInLayouts;
 import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
@@ -19,6 +24,8 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.Constants;
+import frc.robot.Drives.AutoDrives;
+import frc.robot.utilityFunc.SpecialtySwerveExtensions;
 
 public class Drivetrain extends SubsystemBase {
   /**
@@ -26,7 +33,12 @@ public class Drivetrain extends SubsystemBase {
    * <p>
    * This can be reduced to cap the robot's maximum speed. Typically, this is useful during initial testing of the robot.
    */
-  public static final double MAX_VOLTAGE = 12.0;
+  public static final double MAX_VOLTAGE = 6.0;
+
+  public SwerveDriveOdometry swerveOdometry;
+  private final SwerveModulePosition[] MyWheelsPositions;
+  public PIDController visionPIDController;
+  public Pigeon2 pigeon2;
   //  The formula for calculating the theoretical maximum velocity is:
   //   <Motor free speed RPM> / 60 * <Drive reduction> * <Wheel diameter meters> * pi
   //  By default this value is setup for a Mk3 standard module using Falcon500s to drive.
@@ -44,7 +56,13 @@ public class Drivetrain extends SubsystemBase {
    * This is a measure of how fast the robot can rotate in place.
    */
   // Here we calculate the theoretical maximum angular velocity. You can also replace this with a measured amount.
-      
+    
+  public static String CurrentBotState = "Invalid";
+
+  public static final String DefaultTeleopState = "DefaultTeleDrive";
+  public static final String DefaultAutoState = "DefaultAutoDrive";
+  public static final String DefaultInvalidState = "Invalid";
+
   public static final double MAX_ANGULAR_VELOCITY_RADIANS_PER_SECOND = MAX_VELOCITY_METERS_PER_SECOND /
           Math.hypot(Constants.DRIVETRAIN_TRACKWIDTH_METERS / 2.0, Constants.DRIVETRAIN_WHEELBASE_METERS / 2.0);
           public final static SwerveDriveKinematics m_kinematics = new SwerveDriveKinematics(
@@ -69,12 +87,20 @@ public class Drivetrain extends SubsystemBase {
   private final SwerveModule mLeftRear;
   private final SwerveModule mRightRear;
   private final ShuffleboardTab mTab;
+  boolean mWantsAutoVisionAim = false;
 
   private ChassisSpeeds mChassisSpeeds = new ChassisSpeeds(0.0, 0.0, 0.0);
 
+
+  public static final TrajectoryConfig defaultSpeedConfig =
+  new TrajectoryConfig(
+          Constants.AutoConstants.kMaxSpeedMetersPerSecond,
+          Constants.AutoConstants.kMaxAccelerationMetersPerSecondSquared)
+          .setKinematics(Drivetrain.m_kinematics);
+
+
   public Drivetrain() {
     mTab = Shuffleboard.getTab("Drivetrain");
-
     mLeftFront = Mk4iSwerveModuleHelper.createFalcon500(
             // This parameter is optional, but will allow you to see the current state of the module on the dashboard.
             mTab.getLayout("Front Left Module", BuiltInLayouts.kList)
@@ -124,6 +150,16 @@ public class Drivetrain extends SubsystemBase {
             Constants.RIGHT_REAR_ENCODER,
             Constants.RIGHT_REAR_STEER_OFFSET
     );
+
+    MyWheelsPositions = new SwerveModulePosition[]{
+      SpecialtySwerveExtensions.getSwerveModulePosition(mLeftFront, Constants.LEFT_FRONT_ENCODER),
+      SpecialtySwerveExtensions.getSwerveModulePosition(mLeftRear, Constants.LEFT_REAR_ENCODER),
+      SpecialtySwerveExtensions.getSwerveModulePosition(mRightFront, Constants.RIGHT_FRONT_ENCODER),
+      SpecialtySwerveExtensions.getSwerveModulePosition(mRightRear, Constants.RIGHT_REAR_ENCODER)
+
+    };
+    
+    swerveOdometry = new SwerveDriveOdometry(m_kinematics, getGyroscopeRotation(), MyWheelsPositions);
   }
   
 
@@ -140,12 +176,27 @@ public class Drivetrain extends SubsystemBase {
   public void zeroGyroscope() {
         mNavX.zeroYaw();
   }
+  
+  public void getLeftEncoderPosition(){
+
+  }
+
+  private static Drivetrain instance;
+  public static Drivetrain getInstance()
+  {
+        if(instance == null)
+        {
+            instance = new Drivetrain();
+        }
+        return instance;
+  }
 
   public Rotation2d getGyroscopeRotation() {
     if (mNavX.isMagnetometerCalibrated()) {
       // We will only get valid fused headings if the magnetometer is calibrated
       return Rotation2d.fromDegrees(mNavX.getFusedHeading());
     }
+        final SwerveDriveOdometry odometer = new SwerveDriveOdometry(m_kinematics, new Rotation2d(), MyWheelsPositions);
 
     // We have to invert the angle of the NavX so that rotating the robot counter-clockwise makes the angle increase.
     return Rotation2d.fromDegrees(360.0 - mNavX.getYaw());
@@ -155,25 +206,93 @@ public class Drivetrain extends SubsystemBase {
     mChassisSpeeds = chassisSpeeds;
   }
 
+  public void resetOdometry(Pose2d pose) {
+        swerveOdometry.resetPosition(pose.getRotation(), MyWheelsPositions, pose);
+        zeroGyro(pose.getRotation().getDegrees());
+
+        // reset field to vehicle TODO
+       // RobotState.getInstance().reset(new com.team254.lib.geometry.Pose2d(pose));
+    }
+
+    public void zeroGyro(double reset){
+        pigeon2.setYaw(reset);
+        visionPIDController.reset();
+    }
+
   @Override
   public void periodic() {
-    SwerveModuleState[] states = m_kinematics.toSwerveModuleStates(mChassisSpeeds);
-    SwerveDriveKinematics.desaturateWheelSpeeds(states, MAX_VELOCITY_METERS_PER_SECOND);
-    SmartDashboard.putNumber("NavX Angle", mNavX.getAngle());
 
-    mLeftFront.set(states[0].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[0].angle.getRadians());
-    mRightFront.set(states[1].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[1].angle.getRadians());
-    mLeftRear.set(states[2].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[2].angle.getRadians());
-    mRightRear.set(states[3].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[3].angle.getRadians());
+       switch(CurrentBotState)
+       {
+        case DefaultTeleopState:
+           DoTheTeleDriving();
+           break;
+        case DefaultAutoState:
+           DoTheAutoDriving();
+        case DefaultInvalidState:
+        default:
+        break;
+       } 
 
-    SmartDashboard.putNumber("mLeftFront M/PS", (states[0].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
-    SmartDashboard.putNumber("mRightFront M/PS", (states[1].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
-    SmartDashboard.putNumber("mLLeftRear M/PS", (states[2].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
-    SmartDashboard.putNumber("mRightRear M/PS", (states[3].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
-    SmartDashboard.putNumber("mLeftFront Target Angle", (states[0].angle.getRadians()));
-    SmartDashboard.putNumber("mRightFront Target Angle", (states[1].angle.getRadians()));
-    SmartDashboard.putNumber("mLLeftRear Target Angle", (states[2].angle.getRadians()));
-    SmartDashboard.putNumber("mRightRear Target Angle", (states[3].angle.getRadians()));
 
   }
-}
+
+  public void DoTheTeleDriving()
+  {
+        SetWheelSpeedWithChassisSpeed(mChassisSpeeds, "Tele");
+  }
+  public void DoTheAutoDriving()
+  {
+        SetWheelSpeedWithChassisSpeed(mChassisSpeeds, "Auto");
+  }
+
+
+  public void SetWheelSpeedWithChassisSpeed(ChassisSpeeds input, String SmartDashKey)
+  {
+        SwerveModuleState[] states = m_kinematics.toSwerveModuleStates(input);
+        SwerveDriveKinematics.desaturateWheelSpeeds(states, MAX_VELOCITY_METERS_PER_SECOND);
+        SmartDashboard.putNumber("NavX Angle", mNavX.getAngle());
+    
+        mLeftFront.set(states[0].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[0].angle.getRadians());
+        mRightFront.set(states[1].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[1].angle.getRadians());
+        mLeftRear.set(states[2].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[2].angle.getRadians());
+        mRightRear.set(states[3].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[3].angle.getRadians());
+    
+        SmartDashboard.putNumber(SmartDashKey+"mLeftFront M/PS", (states[0].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber(SmartDashKey+"mRightFront M/PS", (states[1].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber(SmartDashKey+"mLLeftRear M/PS", (states[2].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber(SmartDashKey+"mRightRear M/PS", (states[3].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber(SmartDashKey+"mLeftFront Target Angle", (states[0].angle.getRadians()));
+        SmartDashboard.putNumber(SmartDashKey+"mRightFront Target Angle", (states[1].angle.getRadians()));
+        SmartDashboard.putNumber(SmartDashKey+"mLLeftRear Target Angle", (states[2].angle.getRadians()));
+        SmartDashboard.putNumber(SmartDashKey+"mRightRear Target Angle", (states[3].angle.getRadians()));
+  }
+
+  //Util Funcs for drivetrain
+  public Pose2d getPose() {
+        return swerveOdometry.getPoseMeters();
+    }
+
+    public void setModuleStates(SwerveModuleState[] states) {
+        mLeftFront.set(states[0].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[0].angle.getRadians());
+        mRightFront.set(states[1].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[1].angle.getRadians());
+        mLeftRear.set(states[2].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[2].angle.getRadians());
+        mRightRear.set(states[3].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE, states[3].angle.getRadians());
+    
+        SmartDashboard.putNumber("mLeftFront M/PS", (states[0].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber("mRightFront M/PS", (states[1].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber("mLLeftRear M/PS", (states[2].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber("mRightRear M/PS", (states[3].speedMetersPerSecond / MAX_VELOCITY_METERS_PER_SECOND * MAX_VOLTAGE));
+        SmartDashboard.putNumber("mLeftFront Target Angle", (states[0].angle.getRadians()));
+        SmartDashboard.putNumber("mRightFront Target Angle", (states[1].angle.getRadians()));
+        SmartDashboard.putNumber("mLLeftRear Target Angle", (states[2].angle.getRadians()));
+        SmartDashboard.putNumber("mRightRear Target Angle", (states[3].angle.getRadians()));
+    }   
+    
+    public boolean getWantAutoVisionAim() {
+        return mWantsAutoVisionAim;
+    }
+
+    
+
+} 
