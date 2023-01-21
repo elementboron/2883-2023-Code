@@ -13,6 +13,7 @@ import edu.wpi.first.math.trajectory.TrapezoidProfile;
  * constants are needed, to reduce verbosity.
  */
 public final class Constants {
+  //This is a comment for teaching github!
   public static final int LEFT_FRONT_DRIVE = 10, // DRIVETRAIN MOTORS
                           LEFT_REAR_DRIVE = 12,
                           RIGHT_FRONT_DRIVE = 16,
